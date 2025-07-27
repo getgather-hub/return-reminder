@@ -63,7 +63,9 @@ export const ipBlocker =
     try {
       const ip = proxyService.getClientIp(req);
       const result = await proxyService.getClientLocation(ip);
-      console.log('[ipBlocker] domain: ', result?.traits?.domain);
+      if (result) {
+        console.log('[ipBlocker] ip: ', ip, ' domain: ', result.traits?.domain);
+      }
       if (result && result.traits?.domain) {
         const domain = result.traits.domain;
 
