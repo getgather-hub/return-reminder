@@ -106,7 +106,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.post('/internal/get-signin-url', async (req, res) => {
+app.post('/internal/mcp/get-signin-url', async (req, res) => {
   try {
     const { brand_id } = req.body;
 
