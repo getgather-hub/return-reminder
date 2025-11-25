@@ -2,7 +2,6 @@
   "brand_id": "wayfair",
   "brand_name": "Wayfair",
   "logo_url": "https://upload.wikimedia.org/wikipedia/commons/0/0a/Wayfair_logo_with_tagline.png",
-  "is_dpage": true,
   "dataTransform": {
     "dataPath": "purchases",
     "fieldMappings": [

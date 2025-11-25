@@ -27,20 +27,15 @@ export function DataSource({
   const handleConnect = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(
-        brandConfig.is_dpage
-          ? '/internal/mcp/dpage-url'
-          : '/internal/mcp/retrieve-data',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            brand_id: brandConfig.brand_id,
-          }),
-        }
-      );
+      const response = await fetch('/internal/mcp/get-signin-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          brand_id: brandConfig.brand_id,
+        }),
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -102,7 +97,7 @@ export function DataSource({
     signinId: string;
     brandId: string;
   }) => {
-    fetch('/internal/mcp/dpage-finalize-signin', {
+    fetch('/internal/mcp/finalize-signin', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -120,7 +115,7 @@ export function DataSource({
     setIsLoading(false);
     onSuccessConnect(data);
 
-    if (brandConfig.is_dpage && linkId) {
+    if (linkId) {
       onFinalizeSignin({ signinId: linkId, brandId: brandConfig.brand_id });
     }
   };
