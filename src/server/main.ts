@@ -51,11 +51,12 @@ const createProxy = (path: string) =>
     },
   });
 
-const proxyPaths = ['/dpage', '/link', '/__assets', '/__static/assets'];
+const proxyPaths = ['/dpage'];
 
 proxyPaths.forEach((path) => {
   app.use(path, createProxy(path));
 });
+
 app.use('/api', async (req, res, next) => {
   bodyParser.json()(req, res, async (err) => {
     if (err) return next(err);
@@ -105,111 +106,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.post('/internal/mcp/retrieve-data', async (req, res) => {
-  try {
-    const { brand_id } = req.body;
-
-    Logger.info('MCP retrieve data request', {
-      brandId: brand_id,
-      sessionId: req.sessionID,
-    });
-
-    if (!brand_id) {
-      res.status(400).json({
-        success: false,
-        error: 'brand_id is required',
-      });
-      return;
-    }
-
-    const ipAddress = locationService.getClientIp(req);
-    mcpService.setClientIpAddress(req.sessionID, ipAddress);
-    const structuredContent = await mcpService.retrieveData(
-      brand_id,
-      req.sessionID
-    );
-
-    if (!structuredContent) {
-      throw new Error('MCP tool returned no data');
-    }
-
-    // Check if we got a URL (authentication required) or direct data
-    if (structuredContent?.url) {
-      // Rewrite URL to use app host instead of GETGATHER_URL
-      const protocol = req.protocol;
-      const host = req.get('host') || 'localhost:3000';
-      const appHost = `${protocol}://${host}`;
-      const serverUrl = mcpService.getServerUrl();
-
-      Logger.debug('Rewriting URL', {
-        from: structuredContent.url,
-        serverUrl,
-        to: appHost,
-      });
-
-      if (structuredContent.url.includes(serverUrl)) {
-        structuredContent.url = structuredContent.url.replace(
-          serverUrl,
-          appHost
-        );
-      }
-    }
-
-    res.json({
-      success: true,
-      data: structuredContent,
-    });
-  } catch (error) {
-    Logger.error('MCP retrieve data failed', error as Error, {
-      component: 'server',
-      operation: 'retrieve-data',
-      brandId: req.body.brand_id,
-      sessionId: req.sessionID,
-    });
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-});
-
-app.post('/internal/mcp/poll-auth', async (req, res) => {
-  try {
-    const { link_id, brand_id } = req.body;
-
-    if (!link_id || !brand_id) {
-      res.status(400).json({
-        success: false,
-        error: 'link_id and brand_id are required',
-      });
-      return;
-    }
-
-    const structuredContent = await mcpService.pollSignin(
-      link_id,
-      req.sessionID,
-      brand_id
-    );
-
-    res.json({
-      success: true,
-      data: structuredContent,
-    });
-  } catch (error) {
-    Logger.error('MCP poll auth failed', error as Error, {
-      component: 'server',
-      operation: 'poll-auth',
-      linkId: req.body.link_id,
-      sessionId: req.sessionID,
-    });
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-});
-
-app.post('/internal/mcp/dpage-url', async (req, res) => {
+app.post('/internal/get-signin-url', async (req, res) => {
   try {
     const { brand_id } = req.body;
 
@@ -277,7 +174,7 @@ app.post('/internal/mcp/dpage-url', async (req, res) => {
   }
 });
 
-app.post('/internal/mcp/dpage-signin-check', async (req, res) => {
+app.post('/internal/mcp/signin-check', async (req, res) => {
   try {
     const { brand_id, link_id } = req.body;
 
@@ -294,12 +191,12 @@ app.post('/internal/mcp/dpage-signin-check', async (req, res) => {
   } catch (error) {
     Logger.error('MCP dpage url failed', error as Error, {
       component: 'server',
-      operation: 'dpage-url',
+      operation: 'get-signin-url',
     });
   }
 });
 
-app.post('/internal/mcp/dpage-finalize-signin', async (req, res) => {
+app.post('/internal/mcp/finalize-signin', async (req, res) => {
   try {
     const { signin_id, brand_id } = req.body;
 
@@ -324,7 +221,7 @@ app.post('/internal/mcp/dpage-finalize-signin', async (req, res) => {
   } catch (error) {
     Logger.error('MCP dpage finalize signin error:', error as Error, {
       component: 'server',
-      operation: 'dpage-finalize-signin',
+      operation: 'finalize-signin',
       signinId: req.body.signin_id,
       brandId: req.body.brand_id,
       sessionId: req.sessionID,

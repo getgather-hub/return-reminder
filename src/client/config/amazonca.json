@@ -3,7 +3,6 @@
   "brand_name": "Amazon Canada",
   "logo_url": "https://i.pinimg.com/originals/01/ca/da/01cada77a0a7d326d85b7969fe26a728.jpg",
   "is_mandatory": false,
-  "is_dpage": true,
   "dataTransform": {
     "dataPath": "purchases",
     "fieldMappings": [

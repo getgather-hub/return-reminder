@@ -11,33 +11,12 @@ import { Logger } from './logger.js';
 
 type MCPTool = {
   name: string;
-  args?: (results: unknown[]) => Record<string, unknown>[];
 };
 
 const BRAND_MCP_TOOLS: Record<string, MCPTool[]> = {
   amazon: [{ name: 'amazon_dpage_get_purchase_history' }],
   amazonca: [{ name: 'amazonca_dpage_get_purchase_history' }],
-  officedepot: [
-    { name: 'officedepot_get_order_history' },
-    {
-      name: 'officedepot_get_order_history_details',
-      args: (results) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const orders = (results[0] as any)?.purchase_history || [];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return orders.map((order: any) => ({
-          order_number: order.order_number,
-        }));
-      },
-    },
-  ],
   wayfair: [{ name: 'wayfair_dpage_get_order_history' }],
-};
-
-const MCP_URL_PATHS: Record<string, string> = {
-  amazon: 'mcp-shopping',
-  amazonca: 'mcp-shopping',
-  wayfair: 'mcp-shopping',
 };
 
 export class MCPService {
@@ -81,9 +60,8 @@ export class MCPService {
 
       console.log('Setup MCP client with location: ', location);
 
-      const mcpUrlPath = MCP_URL_PATHS[brandId] ?? 'mcp';
       const transport = new StreamableHTTPClientTransport(
-        new URL(`${this.serverUrl}/${mcpUrlPath}/`),
+        new URL(`${this.serverUrl}/mcp/`),
         {
           requestInit: {
             headers: {
@@ -173,104 +151,6 @@ export class MCPService {
     return tools;
   }
 
-  async retrieveData(brandId: string, sessionId: string) {
-    const tools = this.getMCPTools(brandId);
-    const results: unknown[] = [];
-    let mergedContent = {} as Record<string, unknown>;
-    let currentToolName = '';
-
-    try {
-      for (let i = 0; i < tools.length; i++) {
-        currentToolName = tools[i].name;
-        Logger.debug('Calling MCP tool', {
-          toolName: currentToolName,
-          brandId,
-          sessionId,
-        });
-
-        const toolArgs = tools[i].args?.(results) || [{}];
-
-        // Call tool multiple times, once for each arg set
-        const allResults = [];
-        for (const argSet of toolArgs) {
-          const result = await this.callToolWithReconnect({
-            name: tools[i].name,
-            arguments: argSet,
-            sessionId: sessionId,
-            brandId: brandId,
-          });
-
-          Logger.debug('MCP tool response received', {
-            brandId,
-            toolName: currentToolName,
-            hasContent: !!result.structuredContent,
-          });
-
-          allResults.push(result.structuredContent);
-        }
-
-        const combinedResult = {} as Record<string, unknown>;
-        for (const result of allResults) {
-          const resultObj = result as Record<string, unknown>;
-          for (const [key, value] of Object.entries(resultObj)) {
-            if (Array.isArray(value)) {
-              if (!combinedResult[key]) {
-                combinedResult[key] = [];
-              }
-              (combinedResult[key] as unknown[]).push(...value);
-            } else {
-              combinedResult[key] = value;
-            }
-          }
-        }
-
-        results.push(combinedResult);
-        mergedContent = {
-          ...mergedContent,
-          ...combinedResult,
-        };
-      }
-
-      if (
-        mergedContent.purchase_history &&
-        mergedContent.purchase_history_details
-      ) {
-        mergedContent = this.wireOrderHistoryWithDetails(mergedContent);
-      }
-
-      return mergedContent as Record<string, string>;
-    } catch (error) {
-      Logger.error('MCP tool call failed', error as Error, {
-        component: 'mcp-service',
-        operation: 'retrieveData',
-        brandId,
-        toolName: currentToolName,
-        sessionId,
-      });
-      throw error;
-    }
-  }
-
-  async pollSignin(linkId: string, sessionId: string, brandId: string) {
-    Logger.debug('Polling auth status', { linkId, sessionId });
-
-    const result = await this.callToolWithReconnect(
-      {
-        name: 'poll_signin',
-        arguments: { link_id: linkId },
-        sessionId: sessionId,
-        brandId: brandId,
-      },
-      undefined,
-      {
-        timeout: 6000000,
-        maxTotalTimeout: 6000000,
-      }
-    );
-
-    return result.structuredContent;
-  }
-
   async getDpageUrl(brandId: string, sessionId: string) {
     const tools = this.getMCPTools(brandId);
     const result = await this.callToolWithReconnect({
@@ -346,57 +226,6 @@ export class MCPService {
 
   setClientIpAddress(sessionId: string, ipAddress: string) {
     this.clientIpAddresses.set(sessionId, ipAddress);
-  }
-
-  private wireOrderHistoryWithDetails(
-    mergedContent: Record<string, unknown>
-  ): Record<string, unknown> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const history = mergedContent.purchase_history as any[];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const details = mergedContent.purchase_history_details as any[];
-
-    if (!Array.isArray(history) || !Array.isArray(details)) {
-      return mergedContent;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const detailsByOrderId = new Map<string, any[]>();
-    const orderIdKey = 'order_id' in details[0] ? 'order_id' : 'order_number';
-    for (const detail of details) {
-      if (detail[orderIdKey]) {
-        if (!detailsByOrderId.has(detail[orderIdKey])) {
-          detailsByOrderId.set(detail[orderIdKey], []);
-        }
-        detailsByOrderId.get(detail[orderIdKey])!.push(detail);
-      }
-    }
-
-    const enrichedHistory = history.map((historyItem) => {
-      const matchingDetails =
-        detailsByOrderId.get(historyItem[orderIdKey]) || [];
-
-      const enrichedItem = { ...historyItem };
-
-      if (matchingDetails.length > 0) {
-        const productNames = matchingDetails
-          .map((detail) => detail.product_name)
-          .filter((name) => name);
-        enrichedItem.product_names = productNames;
-
-        const imageUrls = matchingDetails
-          .map((detail) => detail.image_url)
-          .filter((url) => url);
-        enrichedItem.image_urls = imageUrls;
-      }
-
-      return enrichedItem;
-    });
-
-    return {
-      ...mergedContent,
-      purchase_history: enrichedHistory,
-    };
   }
 
   getServerUrl(): string {
